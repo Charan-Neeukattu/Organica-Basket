@@ -4,7 +4,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
@@ -49,6 +49,7 @@ export default function InventoryScreen() {
     id: "",
     name: "",
   });
+  const params = useLocalSearchParams();
 
   // Import pill animation state
   const importScale = useSharedValue(1);
@@ -65,7 +66,11 @@ export default function InventoryScreen() {
   useFocusEffect(
     React.useCallback(() => {
       fetchProducts();
-    }, []),
+      if (params.category) {
+        setSelectedCategory(params.category as string);
+        router.setParams({ category: "" });
+      }
+    }, [params.category]),
   );
 
   const fetchProducts = async () => {
