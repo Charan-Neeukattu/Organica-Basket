@@ -16,12 +16,17 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Pressable,
 } from "react-native";
 import Animated, {
   FadeIn,
   FadeInRight,
   FadeOut,
   Layout,
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  Easing,
 } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as XLSX from "xlsx";
@@ -44,6 +49,12 @@ export default function InventoryScreen() {
     id: "",
     name: "",
   });
+
+  // Import pill animation state
+  const importScale = useSharedValue(1);
+  const importAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: importScale.value }],
+  }));
 
   // Dynamically extract categories from products
   const dynamicCategories = [
@@ -445,17 +456,33 @@ export default function InventoryScreen() {
               color={SOFT_GREEN}
             />
           </TouchableOpacity>
-          <TouchableOpacity
+          <Pressable
+            onPressIn={() => {
+              importScale.value = withTiming(0.985, {
+                duration: 180,
+                easing: Easing.bezier(0.22, 1, 0.36, 1),
+              });
+            }}
+            onPressOut={() => {
+              importScale.value = withTiming(1, {
+                duration: 180,
+                easing: Easing.bezier(0.22, 1, 0.36, 1),
+              });
+            }}
             onPress={handleBulkUpload}
-            style={[styles.actionBtnHeader, { backgroundColor: "#fff" }]}
+            android_ripple={null}
+            style={{}}
           >
-            <MaterialCommunityIcons
-              name="file-excel-outline"
-              size={20}
-              color={SOFT_GREEN}
-            />
-            <Text style={styles.actionBtnTextHeader}>Import</Text>
-          </TouchableOpacity>
+            <Animated.View style={[styles.importPill, importAnimatedStyle]}>
+              <Ionicons
+                name="download-outline"
+                size={18}
+                color={SOFT_GREEN}
+                style={styles.importIcon}
+              />
+              <Text style={styles.importText}>Import</Text>
+            </Animated.View>
+          </Pressable>
           <TouchableOpacity
             onPress={() => router.push("/(owner)/add-product")}
             style={[styles.actionBtnHeader, { backgroundColor: SOFT_GREEN }]}
@@ -631,6 +658,21 @@ const styles = StyleSheet.create({
     color: SOFT_GREEN,
     marginLeft: 6,
   },
+  importPill: {
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#F4F5E6",
+    paddingHorizontal: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
+    elevation: 1,
+  },
+  importIcon: { marginRight: 6 },
+  importText: { fontSize: 14, fontWeight: "500", color: SOFT_GREEN },
   addBtn: {
     width: 48,
     height: 48,
