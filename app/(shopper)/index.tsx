@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   DeviceEventEmitter,
   Modal,
+  TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
@@ -31,6 +32,7 @@ export default function HomeScreen() {
   const [stores, setStores] = useState<any[]>([]);
   const [following, setFollowing] = useState<string[]>([]);
   const [closedStoreModal, setClosedStoreModal] = useState({ show: false, name: '' });
+  const [searchQuery, setSearchQuery] = useState("");
 
   const lastScrollY = useSharedValue(0);
   const isTabBarVisible = useSharedValue(1);
@@ -140,8 +142,10 @@ export default function HomeScreen() {
           </View>
           
           <View style={styles.greetingSection}>
-            <Text style={styles.namasteText}>Namaste,</Text>
-            <Text style={styles.userNameText}>{userProfile?.full_name?.split(" ")[0] || "User"}</Text>
+            <View style={styles.greetingRow}>
+              <Text style={styles.namasteText}>Namaste,</Text>
+              <Text style={styles.userNameText}>{userProfile?.full_name?.split(" ")[0] || "User"}</Text>
+            </View>
             
             {userProfile?.location_data && (Array.isArray(userProfile.location_data) ? userProfile.location_data.length > 0 : true) && (
               <View style={styles.locationContainer}>
@@ -154,9 +158,21 @@ export default function HomeScreen() {
               </View>
             )}
             
-            <Text style={styles.subtext}>
-              Fresh arrivals from the morning dew, curated for you.
-            </Text>
+            <View style={styles.searchBarContainer}>
+              <Ionicons name="search" size={20} color="#8A998A" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search local organic stores..."
+                placeholderTextColor="#8A998A"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery("")} style={styles.clearSearchBtn}>
+                  <Ionicons name="close-circle" size={20} color="#8A998A" />
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
         </Animated.View>
 
@@ -172,82 +188,102 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.storesList}>
-          {stores.map((store, index) => {
-            const isFollowing = following.includes(store.id);
-            const isLive = store.is_accepting_orders;
-            
-            return (
-              <TouchableOpacity 
-                key={store.id} 
-                activeOpacity={0.9}
-                onPress={() => {
-                  if (isLive) {
-                    router.push(`/shop/${store.id}`);
-                  } else {
-                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-                    setClosedStoreModal({ show: true, name: store.name });
-                  }
-                }}
-              >
-                <Animated.View entering={FadeInUp.delay(index * 100)} style={styles.premiumCard}>
-                  {/* Image Section - Top 60% */}
-                  <View style={styles.cardImageContainer}>
-                    <Image source={{ uri: store.image_url || placeholderImg }} style={styles.cardImage} contentFit="cover" />
-                    
-                    {/* Top Badges overlay */}
-                    <View style={styles.imageBadgeRow}>
-                      <BlurView intensity={80} tint={isLive ? "light" : "dark"} style={[styles.statusBadge, isLive ? { backgroundColor: "rgba(39, 174, 96, 0.85)" } : null]}>
-                        <Text style={[styles.statusBadgeText, isLive ? { color: "#fff" } : null]}>
-                          {isLive ? "LIVE HARVEST" : "CLOSED"}
-                        </Text>
-                      </BlurView>
-                      
-                      <TouchableOpacity 
-                        onPress={() => toggleFollow(store.id)} 
-                        style={[styles.followBtn, isFollowing ? styles.followingBtn : null]}
-                      >
-                        <Ionicons 
-                          name={isFollowing ? "checkmark-circle" : "person-add-outline"} 
-                          size={14} 
-                          color={isFollowing ? "#fff" : "#1E261E"} 
-                        />
-                        <Text style={[styles.followBtnText, isFollowing ? styles.followingBtnText : null]}>
-                          {isFollowing ? "Following" : "Follow"}
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
+          {(() => {
+            const filteredStores = stores.filter(store => {
+              if (!searchQuery) return true;
+              const query = searchQuery.toLowerCase();
+              return store.name?.toLowerCase().includes(query) || 
+                     store.location?.toLowerCase().includes(query) || 
+                     store.address?.toLowerCase().includes(query);
+            });
 
-                  {/* Content Section - Bottom 40% */}
-                  <View style={styles.cardContent}>
-                    <View style={styles.cardHeaderRow}>
-                      <View style={{ flex: 1, paddingRight: 10 }}>
-                        <Text style={styles.storeName} numberOfLines={1}>{store.name}</Text>
-                        <View style={styles.locationRow}>
-                          <Ionicons name="location-sharp" size={14} color="#FF8C42" />
-                          <Text style={styles.locationText} numberOfLines={1}>{store.address || store.location || "Nearby Local Farm"}</Text>
+            if (filteredStores.length === 0) {
+              return (
+                <View style={styles.emptyContainer}>
+                  <Ionicons name="search-outline" size={48} color="#C4CEC4" />
+                  <Text style={styles.emptyTitle}>No Stores Found</Text>
+                  <Text style={styles.emptySub}>We couldn't find any stores matching "{searchQuery}".</Text>
+                </View>
+              );
+            }
+
+            return filteredStores.map((store, index) => {
+              const isFollowing = following.includes(store.id);
+              const isLive = store.is_accepting_orders;
+              
+              return (
+                <TouchableOpacity 
+                  key={store.id} 
+                  activeOpacity={0.9}
+                  onPress={() => {
+                    if (isLive) {
+                      router.push(`/shop/${store.id}`);
+                    } else {
+                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                      setClosedStoreModal({ show: true, name: store.name });
+                    }
+                  }}
+                >
+                  <Animated.View entering={FadeInUp.delay(index * 100)} style={styles.premiumCard}>
+                    {/* Image Section - Top 60% */}
+                    <View style={styles.cardImageContainer}>
+                      <Image source={{ uri: store.image_url || placeholderImg }} style={styles.cardImage} contentFit="cover" />
+                      
+                      {/* Top Badges overlay */}
+                      <View style={styles.imageBadgeRow}>
+                        <BlurView intensity={80} tint={isLive ? "light" : "dark"} style={[styles.statusBadge, isLive ? { backgroundColor: "rgba(39, 174, 96, 0.85)" } : null]}>
+                          <Text style={[styles.statusBadgeText, isLive ? { color: "#fff" } : null]}>
+                            {isLive ? "LIVE HARVEST" : "CLOSED"}
+                          </Text>
+                        </BlurView>
+                        
+                        <TouchableOpacity 
+                          onPress={() => toggleFollow(store.id)} 
+                          style={[styles.followBtn, isFollowing ? styles.followingBtn : null]}
+                        >
+                          <Ionicons 
+                            name={isFollowing ? "checkmark-circle" : "person-add-outline"} 
+                            size={14} 
+                            color={isFollowing ? "#fff" : "#1E261E"} 
+                          />
+                          <Text style={[styles.followBtnText, isFollowing ? styles.followingBtnText : null]}>
+                            {isFollowing ? "Following" : "Follow"}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                    {/* Content Section - Bottom 40% */}
+                    <View style={styles.cardContent}>
+                      <View style={styles.cardHeaderRow}>
+                        <View style={{ flex: 1, paddingRight: 10 }}>
+                          <Text style={styles.storeName} numberOfLines={1}>{store.name}</Text>
+                          <View style={styles.locationRow}>
+                            <Ionicons name="location-sharp" size={14} color="#FF8C42" />
+                            <Text style={styles.locationText} numberOfLines={1}>{store.address || store.location || "Nearby Local Farm"}</Text>
+                          </View>
+                        </View>
+                        <View style={styles.ratingBox}>
+                          <Ionicons name="star" size={12} color="#F1C40F" />
+                          <Text style={styles.ratingText}>4.9</Text>
                         </View>
                       </View>
-                      <View style={styles.ratingBox}>
-                        <Ionicons name="star" size={12} color="#F1C40F" />
-                        <Text style={styles.ratingText}>4.9</Text>
+                      
+                      {/* Dynamic Data Row (Status) */}
+                      <View style={styles.dynamicDataRow}>
+                        <View style={styles.dataPill}>
+                          <Ionicons name="chatbubble-ellipses-outline" size={14} color="#4A6038" />
+                          <Text style={styles.dataPillText} numberOfLines={1}>
+                            {store.status_message || (isLive ? "Accepting orders now" : "Preparing harvest")}
+                          </Text>
+                        </View>
                       </View>
                     </View>
-                    
-                    {/* Dynamic Data Row (Status) */}
-                    <View style={styles.dynamicDataRow}>
-                      <View style={styles.dataPill}>
-                        <Ionicons name="chatbubble-ellipses-outline" size={14} color="#4A6038" />
-                        <Text style={styles.dataPillText} numberOfLines={1}>
-                          {store.status_message || (isLive ? "Accepting orders now" : "Preparing harvest")}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                </Animated.View>
-              </TouchableOpacity>
-            );
-          })}
+                  </Animated.View>
+                </TouchableOpacity>
+              );
+            });
+          })()}
         </View>
       </Animated.ScrollView>
 
@@ -286,12 +322,42 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 20, fontWeight: "800", color: "#4A6038", fontFamily: Platform.OS === "ios" ? "Georgia" : "serif", fontStyle: "italic" },
   profileBtn: { width: 44, height: 44, borderRadius: 14, overflow: 'hidden' },
   profileAvatar: { width: 44, height: 44, borderRadius: 14, backgroundColor: "#fff" },
-  greetingSection: { marginTop: 10 },
-  namasteText: { fontSize: 44, fontFamily: Platform.OS === "ios" ? "Georgia" : "serif", color: "#1E261E", lineHeight: 48 },
-  userNameText: { fontSize: 44, fontFamily: Platform.OS === "ios" ? "Georgia" : "serif", color: "#4A6038", fontStyle: "italic", marginBottom: 8 },
-  locationContainer: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 12 },
-  headerLocationText: { fontSize: 14, color: "#FF8C42", fontWeight: "700" },
-  subtext: { fontSize: 15, color: "#8A998A", lineHeight: 22, maxWidth: "85%" },
+  greetingSection: { marginTop: 0 },
+  greetingRow: { flexDirection: "row", alignItems: "baseline", gap: 8, marginBottom: 4 },
+  namasteText: { fontSize: 24, fontFamily: Platform.OS === "ios" ? "Georgia" : "serif", color: "#1E261E" },
+  userNameText: { fontSize: 24, fontFamily: Platform.OS === "ios" ? "Georgia" : "serif", color: "#4A6038", fontStyle: "italic" },
+  locationContainer: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 16 },
+  headerLocationText: { fontSize: 13, color: "#FF8C42", fontWeight: "700" },
+  
+  searchBarContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    height: 48,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    shadowColor: "#4A6038",
+    shadowOpacity: 0.08,
+    shadowRadius: 15,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: "#E0E8D8",
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: 15,
+    color: "#1E261E",
+    fontWeight: "500",
+  },
+  clearSearchBtn: {
+    padding: 4,
+  },
+
+  emptyContainer: { alignItems: "center", justifyContent: "center", paddingVertical: 40 },
+  emptyTitle: { fontSize: 18, fontWeight: "700", color: "#1E261E", marginTop: 12, marginBottom: 6 },
+  emptySub: { fontSize: 14, color: "#8A998A", textAlign: "center", paddingHorizontal: 20 },
+
   sectionHeader: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", paddingHorizontal: 24, marginBottom: 24 },
   sectionTitle: { fontSize: 22, fontFamily: Platform.OS === "ios" ? "Georgia" : "serif", color: "#1E261E", fontWeight: "700" },
   titleUnderline: { height: 3, width: 30, backgroundColor: "#FF8C42", marginTop: 4 },
