@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Platform, Modal, Linking } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Platform, Modal, Linking, Pressable } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import Animated, { FadeInDown, FadeInUp } from "react-native-reanimated";
+import Animated, { FadeInDown, FadeInUp, useSharedValue, useAnimatedStyle, withTiming, Easing } from "react-native-reanimated";
 import { supabase } from "../../../lib/supabase";
 import * as Haptics from "expo-haptics";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 
 export default function OwnerDashboard() {
   const [store, setStore] = useState<any>(null);
@@ -14,6 +14,12 @@ export default function OwnerDashboard() {
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [showOrderModal, setShowOrderModal] = useState(false);
+  const router = useRouter();
+
+  const productCardScale = useSharedValue(1);
+  const productCardAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: productCardScale.value }],
+  }));
 
   useFocusEffect(
     React.useCallback(() => {
@@ -140,11 +146,31 @@ export default function OwnerDashboard() {
 
         {/* Quick Stats */}
         <View style={styles.statsGrid}>
-          <Animated.View entering={FadeInUp.delay(200)} style={styles.statCard}>
-            <Ionicons name="cube-outline" size={24} color="#4A6038" />
-            <Text style={styles.statVal}>{stats.products}</Text>
-            <Text style={styles.statLabel}>Products</Text>
-          </Animated.View>
+          <Pressable 
+            style={{ flex: 1 }}
+            onPressIn={() => {
+              productCardScale.value = withTiming(0.975, {
+                duration: 200,
+                easing: Easing.bezier(0.22, 1, 0.36, 1),
+              });
+            }}
+            onPressOut={() => {
+              productCardScale.value = withTiming(1, {
+                duration: 200,
+                easing: Easing.bezier(0.22, 1, 0.36, 1),
+              });
+            }}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push("/(owner)/(tabs)/inventory?category=All");
+            }}
+          >
+            <Animated.View entering={FadeInUp.delay(200)} style={[styles.statCard, productCardAnimatedStyle]}>
+              <Ionicons name="cube-outline" size={24} color="#4A6038" />
+              <Text style={styles.statVal}>{stats.products}</Text>
+              <Text style={styles.statLabel}>Products</Text>
+            </Animated.View>
+          </Pressable>
           <Animated.View entering={FadeInUp.delay(300)} style={styles.statCard}>
             <Ionicons name="receipt-outline" size={24} color="#4A6038" />
             <Text style={styles.statVal}>{stats.orders}</Text>
