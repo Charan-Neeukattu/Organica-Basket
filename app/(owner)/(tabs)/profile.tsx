@@ -333,6 +333,30 @@ export default function OwnerProfileScreen() {
           )}
         </Animated.View>
 
+        {/* Store Reviews Link */}
+        {!isEditing && (
+          <Animated.View entering={FadeInUp.delay(350)}>
+            <TouchableOpacity
+              style={styles.reviewsLinkCard}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push("/(owner)/reviews" as any);
+              }}
+            >
+              <View style={styles.reviewsLinkIcon}>
+                <Ionicons name="star" size={20} color="#F1C40F" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.reviewsLinkTitle}>Store Reviews</Text>
+                <Text style={styles.reviewsLinkSub}>
+                  {store?.average_rating ? Number(store.average_rating).toFixed(1) : "0.0"} average ({store?.total_reviews || 0} reviews)
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={SOFT_GREEN} />
+            </TouchableOpacity>
+          </Animated.View>
+        )}
+
         {/* Order Toggle */}
         <Animated.View entering={FadeInUp.delay(400)} style={[styles.toggleCard, { backgroundColor: store?.is_accepting_orders ? "#27AE60" : "#2D382D" }]}>
           <View style={{ flex: 1 }}>
@@ -391,4 +415,38 @@ const styles = StyleSheet.create({
   dateChipsContainer: { flexDirection: "row", gap: 8, marginTop: 4 },
   dateChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: "#EAF0E4", borderWidth: 1, borderColor: "rgba(74,96,56,0.2)" },
   dateChipText: { fontSize: 12, color: "#4A6038", fontWeight: "600" },
+  reviewsLinkCard: {
+    backgroundColor: "#fff",
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: "rgba(240, 242, 217, 0.5)",
+  },
+  reviewsLinkIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: "#FDF9E6",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
+  reviewsLinkTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#1E261E",
+  },
+  reviewsLinkSub: {
+    fontSize: 12,
+    color: "#8A998A",
+    fontWeight: "600",
+    marginTop: 2,
+  },
 });

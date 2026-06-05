@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -18,7 +18,7 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { Image } from "expo-image";
@@ -50,13 +50,16 @@ export default function ProfileScreen() {
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [showOrderDetailModal, setShowOrderDetailModal] = useState(false);
+  const [reviewedOrderIds, setReviewedOrderIds] = useState<Set<string>>(new Set());
 
   const ACTIVE_ORANGE = "#FF8C42";
 
-  useEffect(() => {
-    fetchProfile();
-    fetchOrders();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      fetchProfile();
+      fetchOrders();
+    }, [])
+  );
 
   const fetchProfile = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -86,13 +89,21 @@ export default function ProfileScreen() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const { data } = await supabase
-      .from("orders")
-      .select("*, stores(*, owner:profiles(full_name, phone_number))")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false });
+    const [ordersRes, reviewsRes] = await Promise.all([
+      supabase
+        .from("orders")
+        .select("*, stores(*, owner:profiles(full_name, phone_number))")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("reviews")
+        .select("order_id")
+        .eq("user_id", user.id)
+    ]);
 
-    setOrders(data || []);
+    setOrders(ordersRes.data || []);
+    const reviewedIds = new Set((reviewsRes.data || []).map((r: any) => r.order_id));
+    setReviewedOrderIds(reviewedIds);
     setOrdersLoading(false);
   };
 
@@ -356,16 +367,39 @@ export default function ProfileScreen() {
                 </View>
                 <View style={styles.orderFooter}>
                   <Text style={styles.orderItemSummary}>{JSON.parse(JSON.stringify(order.items)).length} items • ₹{order.total_amount}</Text>
-                  <TouchableOpacity 
-                    style={styles.reorderBtn}
-                    onPress={() => {
-                      setSelectedOrder(order);
-                      setShowOrderDetailModal(true);
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    }}
-                  >
-                    <Text style={styles.reorderText}>Details</Text>
-                  </TouchableOpacity>
+                  <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+                    {order.status === 'delivered' && (
+                      reviewedOrderIds.has(order.id) ? (
+                        <View style={styles.reviewedInlineBadge}>
+                          <Ionicons name="checkmark-circle" size={12} color="#4A6038" />
+                          <Text style={styles.reviewedInlineText}>Reviewed</Text>
+                        </View>
+                      ) : (
+                        <TouchableOpacity
+                          style={styles.reviewBtn}
+                          onPress={() => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            router.push({
+                              pathname: "/(shopper)/leave-review" as any,
+                              params: { orderId: order.id, storeId: order.store_id }
+                            });
+                          }}
+                        >
+                          <Text style={styles.reviewBtnText}>Leave Review</Text>
+                        </TouchableOpacity>
+                      )
+                    )}
+                    <TouchableOpacity 
+                      style={styles.reorderBtn}
+                      onPress={() => {
+                        setSelectedOrder(order);
+                        setShowOrderDetailModal(true);
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      }}
+                    >
+                      <Text style={styles.reorderText}>Details</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </Animated.View>
             ))
@@ -552,6 +586,30 @@ export default function ProfileScreen() {
                     </Text>
                  </View>
                  <Text style={styles.orderTimestamp}>Placed on {new Date(selectedOrder.created_at).toLocaleString()}</Text>
+
+                 {selectedOrder.status === 'delivered' && (
+                   reviewedOrderIds.has(selectedOrder.id) ? (
+                     <View style={styles.reviewedBadgeModal}>
+                       <Ionicons name="checkmark-circle" size={16} color="#4A6038" style={{ marginRight: 6 }} />
+                       <Text style={styles.reviewedBadgeModalText}>You reviewed this order</Text>
+                     </View>
+                   ) : (
+                     <TouchableOpacity
+                       style={styles.reviewBtnModal}
+                       onPress={() => {
+                         setShowOrderDetailModal(false);
+                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                         router.push({
+                           pathname: "/(shopper)/leave-review" as any,
+                           params: { orderId: selectedOrder.id, storeId: selectedOrder.store_id }
+                         });
+                       }}
+                     >
+                       <Ionicons name="star" size={16} color="#fff" style={{ marginRight: 6 }} />
+                       <Text style={styles.reviewBtnModalText}>Leave a Review</Text>
+                     </TouchableOpacity>
+                   )
+                 )}
               </View>
             </ScrollView>
           )}
@@ -662,4 +720,53 @@ const styles = StyleSheet.create({
   statusBadgeLarge: { paddingHorizontal: 20, paddingVertical: 8, borderRadius: 12, marginBottom: 12 },
   statusTextLarge: { fontSize: 14, fontWeight: "900" },
   orderTimestamp: { fontSize: 12, color: "#8A998A" },
+  reviewedInlineBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  reviewedInlineText: {
+    color: "#4A6038",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  reviewBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: "#FF8C42",
+  },
+  reviewBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#fff",
+  },
+  reviewedBadgeModal: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#E8F5E9",
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    marginTop: 12,
+  },
+  reviewedBadgeModalText: {
+    color: "#4A6038",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  reviewBtnModal: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FF8C42",
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    marginTop: 12,
+  },
+  reviewBtnModalText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "700",
+  },
 });

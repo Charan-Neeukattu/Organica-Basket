@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import * as Haptics from "expo-haptics";
 import Animated, { FadeInDown, FadeInUp, Layout } from "react-native-reanimated";
 import { supabase } from "../../lib/supabase";
@@ -23,13 +23,19 @@ export default function ShopperNotificationsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [reviewedOrderIds, setReviewedOrderIds] = useState<Set<string>>(new Set());
 
   const ACTIVE_ORANGE = "#FF8C42";
 
   const fetchNotificationsData = useCallback(async (uid: string) => {
     try {
-      const data = await NotificationService.fetchNotifications(uid, "customer");
+      const [data, reviewsRes] = await Promise.all([
+        NotificationService.fetchNotifications(uid, "customer"),
+        supabase.from("reviews").select("order_id").eq("user_id", uid)
+      ]);
       setNotifications(data);
+      const reviewedIds = new Set((reviewsRes.data || []).map((r: any) => r.order_id));
+      setReviewedOrderIds(reviewedIds);
     } catch (error) {
       console.error("Failed to fetch notifications:", error);
     } finally {
@@ -38,16 +44,14 @@ export default function ShopperNotificationsScreen() {
     }
   }, []);
 
+  // Realtime subscription setup once on mount
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
 
-    const setup = async () => {
+    const setupSubscription = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setUserId(user.id);
-        fetchNotificationsData(user.id);
-
-        // Real-time subscription
         unsubscribe = NotificationService.subscribeToNotifications(
           user.id,
           "customer",
@@ -65,12 +69,32 @@ export default function ShopperNotificationsScreen() {
       }
     };
 
-    setup();
+    setupSubscription();
 
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, [fetchNotificationsData]);
+  }, []);
+
+  // Fetch notifications and reviews on screen focus (e.g. when mounting or coming back from leave-review)
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+
+      const getUserIdAndData = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user || !active) return;
+        setUserId(user.id);
+        fetchNotificationsData(user.id);
+      };
+
+      getUserIdAndData();
+
+      return () => {
+        active = false;
+      };
+    }, [fetchNotificationsData])
+  );
 
   const handleRefresh = () => {
     if (userId) {
@@ -236,6 +260,28 @@ export default function ShopperNotificationsScreen() {
                       >
                         {item.message}
                       </Text>
+                      {item.type === "ORDER_DELIVERED" && item.order_id && item.store_id && (
+                        reviewedOrderIds.has(item.order_id) ? (
+                          <View style={styles.reviewedBadge}>
+                            <Ionicons name="checkmark-circle" size={14} color="#4A6038" />
+                            <Text style={styles.reviewedBadgeText}>Reviewed</Text>
+                          </View>
+                        ) : (
+                          <TouchableOpacity
+                            style={styles.reviewCTA}
+                            onPress={() => {
+                              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                              router.push({
+                                pathname: "/(shopper)/leave-review" as any,
+                                params: { orderId: item.order_id, storeId: item.store_id }
+                              });
+                            }}
+                          >
+                            <Ionicons name="star-outline" size={14} color="#fff" />
+                            <Text style={styles.reviewCTAText}>Leave Review</Text>
+                          </TouchableOpacity>
+                        )
+                      )}
                     </View>
 
                     {/* Unread dot */}
@@ -421,5 +467,33 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#8A998A",
     textAlign: "center",
+  },
+  reviewCTA: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#FF8C42",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginTop: 10,
+    alignSelf: "flex-start",
+  },
+  reviewCTAText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  reviewedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 10,
+    alignSelf: "flex-start",
+  },
+  reviewedBadgeText: {
+    color: "#4A6038",
+    fontSize: 12,
+    fontWeight: "700",
   },
 });

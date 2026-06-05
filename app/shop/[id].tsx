@@ -27,6 +27,8 @@ import Animated, {
 import { BlurView } from "expo-blur";
 import { supabase } from "../../lib/supabase";
 import { useCart } from "../../context/CartContext";
+import { ReviewService } from "../../lib/reviewService";
+import { formatRelativeTime } from "../../lib/notificationService";
 
 const { width } = Dimensions.get("window");
 
@@ -239,6 +241,8 @@ export default function StoreDetail() {
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const searchWidth = useSharedValue(0);
+  const [recentReviews, setRecentReviews] = useState<any[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState<boolean>(true);
 
   const uniqueCategories = [...new Set(products.map(p => p.category).filter(Boolean))].sort((a, b) => {
     const indexA = CUSTOM_CATEGORY_ORDER.indexOf(a);
@@ -260,6 +264,7 @@ export default function StoreDetail() {
 
   const fetchStoreAndProducts = React.useCallback(async () => {
     try {
+      setReviewsLoading(true);
       // Fetch Store Info
       const { data: storeData } = await supabase
         .from("stores")
@@ -288,12 +293,16 @@ export default function StoreDetail() {
       } else {
         setProducts([]);
       }
+
+      const reviewsData = await ReviewService.fetchReviewsForStore(id as string);
+      setRecentReviews(reviewsData || []);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
+      setReviewsLoading(false);
     }
-  }, [id]);
+  }, [id, highlightProduct]);
 
   useEffect(() => {
     fetchStoreAndProducts();
@@ -423,8 +432,10 @@ export default function StoreDetail() {
           <Animated.View style={[styles.headerInfo, animatedHeaderInfoStyle]}>
             <Text style={styles.storeName}>{store?.name}</Text>
             <View style={styles.trustRow}>
-              <MaterialCommunityIcons name="shield-check" size={14} color="#4A6038" />
-              <Text style={styles.trustText}>TRUST SCORE 4.8</Text>
+              <Ionicons name="star" size={13} color="#F1C40F" />
+              <Text style={styles.trustText}>
+                {store?.average_rating ? Number(store.average_rating).toFixed(1) : "0.0"} ({store?.total_reviews || 0} reviews)
+              </Text>
             </View>
           </Animated.View>
 
@@ -542,6 +553,55 @@ export default function StoreDetail() {
               </View>
             );
           })}
+        </View>
+
+        {/* Recent Reviews Section */}
+        <View style={styles.reviewsSection}>
+          <Text style={styles.sectionTitle}>Recent Reviews</Text>
+          {reviewsLoading ? (
+            <ActivityIndicator size="small" color="#4A6038" style={{ marginVertical: 20 }} />
+          ) : recentReviews.length === 0 ? (
+            <View style={styles.emptyReviews}>
+              <Ionicons name="chatbubbles-outline" size={40} color="#C0CDB8" />
+              <Text style={styles.emptyReviewsText}>No reviews yet for this store.</Text>
+            </View>
+          ) : (
+            recentReviews.map((rev: any, index: number) => (
+              <Animated.View
+                key={rev.id}
+                entering={FadeInDown.delay(index * 50)}
+                style={styles.reviewCard}
+              >
+                <View style={styles.reviewCardHeader}>
+                  <Image
+                    source={{ uri: rev.profiles?.avatar_url || `https://api.dicebear.com/7.x/avataaars/png?seed=${rev.profiles?.full_name || 'Customer'}` }}
+                    style={styles.reviewAvatar}
+                  />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.reviewAuthor}>
+                      {rev.profiles?.full_name || "Customer"}
+                    </Text>
+                    <Text style={styles.reviewTime}>
+                      {formatRelativeTime(rev.created_at)}
+                    </Text>
+                  </View>
+                  <View style={styles.ratingBox}>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <Ionicons
+                        key={star}
+                        name={star <= rev.rating ? "star" : "star-outline"}
+                        size={12}
+                        color="#F1C40F"
+                      />
+                    ))}
+                  </View>
+                </View>
+                {rev.feedback && (
+                  <Text style={styles.reviewFeedback}>{"\""}{rev.feedback}{"\""}</Text>
+                )}
+              </Animated.View>
+            ))
+          )}
         </View>
 
       </ScrollView>
@@ -811,4 +871,71 @@ const styles = StyleSheet.create({
   modalQtyVal: { fontSize: 20, fontWeight: "800", color: "#1E261E" },
   modalDoneBtn: { backgroundColor: "#1E261E", height: 64, borderRadius: 24, paddingHorizontal: 30, justifyContent: "center", alignItems: "center" },
   modalDoneBtnText: { color: "#fff", fontSize: 16, fontWeight: "800" },
+  reviewsSection: {
+    paddingHorizontal: 20,
+    marginTop: 20,
+    marginBottom: 40,
+  },
+  emptyReviews: {
+    backgroundColor: "rgba(255,255,255,0.6)",
+    borderRadius: 24,
+    padding: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    borderStyle: "dashed",
+    borderWidth: 1.5,
+    borderColor: "#D0D8C0",
+    marginTop: 8,
+  },
+  emptyReviewsText: {
+    fontSize: 14,
+    color: "#8A998A",
+    fontWeight: "600",
+    marginTop: 8,
+  },
+  reviewCard: {
+    backgroundColor: "#fff",
+    borderRadius: 24,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: "#4A6038",
+    shadowOpacity: 0.03,
+    shadowRadius: 15,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: "rgba(240, 242, 217, 0.3)",
+  },
+  reviewCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  reviewAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: "#F4F5E6",
+  },
+  reviewAuthor: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#1E261E",
+  },
+  reviewTime: {
+    fontSize: 11,
+    color: "#8A998A",
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  ratingBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+  },
+  reviewFeedback: {
+    fontSize: 13,
+    color: "#4A524A",
+    lineHeight: 18,
+    marginTop: 10,
+    fontStyle: "italic",
+  },
 });
