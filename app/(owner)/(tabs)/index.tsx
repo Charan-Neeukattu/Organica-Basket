@@ -7,6 +7,7 @@ import { supabase } from "../../../lib/supabase";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect, useRouter } from "expo-router";
 import { showModernAlert } from "../../../components/ModernAlert";
+import { NotificationService } from "../../../lib/notificationService";
 
 export default function OwnerDashboard() {
   const [store, setStore] = useState<any>(null);
@@ -15,6 +16,7 @@ export default function OwnerDashboard() {
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [showOrderModal, setShowOrderModal] = useState(false);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
   const router = useRouter();
 
   const productCardScale = useSharedValue(1);
@@ -29,13 +31,47 @@ export default function OwnerDashboard() {
   );
 
   useEffect(() => {
-    // Other initializations if any
+    let unsubscribe: (() => void) | undefined;
+
+    const setupRealtime = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        unsubscribe = NotificationService.subscribeToNotifications(
+          user.id,
+          "owner",
+          () => {
+            setUnreadNotifCount(prev => prev + 1);
+          }
+        );
+      }
+    };
+
+    setupRealtime();
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
+
+  const fetchUnreadCount = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const data = await NotificationService.fetchNotifications(user.id, "owner");
+        const unread = data.filter(n => !n.is_read).length;
+        setUnreadNotifCount(unread);
+      }
+    } catch (err) {
+      console.error("Error fetching owner unread count:", err);
+    }
+  };
 
   const fetchDashboardData = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+
+      fetchUnreadCount();
 
       const { data: storeData } = await supabase.from("stores").select("*").eq("owner_id", user.id).single();
       setStore(storeData);
@@ -62,7 +98,13 @@ export default function OwnerDashboard() {
 
   const updateOrderStatus = async (orderId: string, newStatus: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const { error } = await supabase.from("orders").update({ status: newStatus }).eq("id", orderId);
+    const { data: updatedOrder, error } = await supabase
+      .from("orders")
+      .update({ status: newStatus })
+      .eq("id", orderId)
+      .select()
+      .single();
+
     if (error) {
       console.error("Update error:", error);
       alert("Error updating order: " + error.message);
@@ -71,6 +113,23 @@ export default function OwnerDashboard() {
       if (newStatus === "delivered") {
         setPendingOrders(prev => prev.filter(o => o.id !== orderId));
         setStats(prev => ({ ...prev, orders: prev.orders - 1 }));
+
+        // Trigger notification for customer
+        if (updatedOrder) {
+          try {
+            await NotificationService.createNotification({
+              recipient_id: updatedOrder.user_id,
+              recipient_role: "customer",
+              title: "Order Delivered",
+              message: "Your order has been successfully delivered.",
+              type: "ORDER_DELIVERED",
+              order_id: updatedOrder.id,
+              store_id: updatedOrder.store_id,
+            });
+          } catch (notifErr) {
+            console.error("Failed to create customer notification:", notifErr);
+          }
+        }
       }
     }
   };
@@ -139,8 +198,29 @@ export default function OwnerDashboard() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
         
         <Animated.View entering={FadeInDown} style={styles.header}>
-          <Text style={styles.welcome}>Welcome back,</Text>
-          <Text style={styles.storeName}>{store?.name || "Organic Store"}</Text>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.welcome}>Welcome back,</Text>
+              <Text style={styles.storeName}>{store?.name || "Organic Store"}</Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push("/(owner)/notifications" as any);
+              }}
+              style={styles.bellBtn}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="notifications-outline" size={24} color="#4A6038" />
+              {unreadNotifCount > 0 && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>
+                    {unreadNotifCount > 9 ? "9+" : unreadNotifCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
           
           {/* Master Harvest Switch */}
           <View style={[styles.harvestControl, store?.is_accepting_orders ? styles.harvestActive : styles.harvestInactive]}>
@@ -516,4 +596,38 @@ const styles = StyleSheet.create({
   totalValue: { fontSize: 18, fontWeight: "900", color: "#4A6038" },
   completeOrderBtn: { backgroundColor: "#4A6038", paddingVertical: 18, borderRadius: 20, alignItems: "center", marginBottom: 20 },
   completeOrderBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  bellBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+    position: "relative",
+    shadowColor: "#1E261E",
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: "#F0F2E4",
+  },
+  badge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    backgroundColor: "#4A6038",
+    borderRadius: 9,
+    minWidth: 18,
+    height: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: "#F5F6E9",
+  },
+  badgeText: {
+    color: "#fff",
+    fontSize: 8,
+    fontWeight: "900",
+  },
 });

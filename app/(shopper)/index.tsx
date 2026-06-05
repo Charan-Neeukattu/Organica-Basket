@@ -25,10 +25,12 @@ import Animated, {
 import { BlurView } from "expo-blur";
 import { supabase } from "../../lib/supabase";
 import * as Haptics from "expo-haptics";
+import { NotificationService } from "../../lib/notificationService";
 
 export default function HomeScreen() {
   const router = useRouter();
   const [userProfile, setUserProfile] = useState<any>(null);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
   const searchInputRef = React.useRef<TextInput>(null);
   const [loading, setLoading] = useState(true);
   const [stores, setStores] = useState<any[]>([]);
@@ -91,6 +93,19 @@ export default function HomeScreen() {
     }
   }, []);
 
+  const fetchUnreadCount = React.useCallback(async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const data = await NotificationService.fetchNotifications(user.id, "customer");
+        const unread = data.filter(n => !n.is_read).length;
+        setUnreadNotifCount(unread);
+      }
+    } catch (error) {
+      console.error("Error fetching unread count:", error);
+    }
+  }, []);
+
   const fetchStores = React.useCallback(async () => {
     const { data } = await supabase
       .from("stores")
@@ -108,8 +123,32 @@ export default function HomeScreen() {
   useFocusEffect(
     React.useCallback(() => {
       fetchProfile();
-    }, [fetchProfile])
+      fetchUnreadCount();
+    }, [fetchProfile, fetchUnreadCount])
   );
+
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+
+    const setupRealtime = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        unsubscribe = NotificationService.subscribeToNotifications(
+          user.id,
+          "customer",
+          () => {
+            setUnreadNotifCount(prev => prev + 1);
+          }
+        );
+      }
+    };
+
+    setupRealtime();
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     fetchStores();
@@ -179,15 +218,34 @@ export default function HomeScreen() {
               <FontAwesome5 name="seedling" size={16} color="#4A6038" />
               <Text style={styles.headerTitle}>Organica Bucket</Text>
             </View>
-            <TouchableOpacity 
-              onPress={() => router.push("/(shopper)/profile" as any)}
-              style={styles.profileBtn}
-            >
-              <Image
-                source={{ uri: userProfile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userProfile?.full_name || 'User'}` }}
-                style={styles.profileAvatar}
-              />
-            </TouchableOpacity>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+              <TouchableOpacity
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  router.push("/(shopper)/notifications" as any);
+                }}
+                style={styles.bellBtn}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="notifications-outline" size={22} color="#4A6038" />
+                {unreadNotifCount > 0 && (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>
+                      {unreadNotifCount > 9 ? "9+" : unreadNotifCount}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity 
+                onPress={() => router.push("/(shopper)/profile" as any)}
+                style={styles.profileBtn}
+              >
+                <Image
+                  source={{ uri: userProfile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userProfile?.full_name || 'User'}` }}
+                  style={styles.profileAvatar}
+                />
+              </TouchableOpacity>
+            </View>
           </View>
           
           <View style={styles.greetingSection}>
@@ -273,7 +331,7 @@ export default function HomeScreen() {
               <View style={styles.emptyContainer}>
                 <Ionicons name="basket-outline" size={48} color="#C4CEC4" />
                 <Text style={styles.emptyTitle}>No Products Found</Text>
-                <Text style={styles.emptySub}>We couldn't find any products matching "{searchQuery}". Try browsing categories above.</Text>
+                <Text style={styles.emptySub}>We couldn&apos;t find any products matching &quot;{searchQuery}&quot;. Try browsing categories above.</Text>
               </View>
             ) : (
               <View style={styles.productResultsList}>
@@ -603,5 +661,39 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "700",
+  },
+  bellBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+    position: "relative",
+    shadowColor: "#4A6038",
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: "#E0E8D8",
+  },
+  badge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    backgroundColor: "#FF8C42",
+    borderRadius: 9,
+    minWidth: 18,
+    height: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: "#F5F6E9",
+  },
+  badgeText: {
+    color: "#fff",
+    fontSize: 8,
+    fontWeight: "900",
   },
 });

@@ -20,6 +20,7 @@ import { BlurView } from "expo-blur";
 import { supabase } from "../../lib/supabase";
 import * as Haptics from "expo-haptics";
 import { showModernAlert } from "../../components/ModernAlert";
+import { NotificationService } from "../../lib/notificationService";
 
 export default function BasketScreen() {
   const router = useRouter();
@@ -119,7 +120,7 @@ export default function BasketScreen() {
       // SAFETY CHECK: Re-verify store status right before placement
       const { data: storeStatus } = await supabase
         .from("stores")
-        .select("is_accepting_orders, name")
+        .select("is_accepting_orders, name, owner_id")
         .eq("id", store_id)
         .single();
 
@@ -130,16 +131,33 @@ export default function BasketScreen() {
         return;
       }
 
-      const { error } = await supabase.from("orders").insert({
+      const { data: orderData, error } = await supabase.from("orders").insert({
         user_id: user.id,
         store_id: store_id,
         total_amount: totalPrice,
         status: 'pending',
         items: cartItems,
         delivery_address: selectedAddress // Store full snapshot for history
-      });
+      }).select().single();
 
       if (error) throw error;
+
+      // Create a notification for the store owner
+      if (storeStatus?.owner_id && orderData?.id) {
+        try {
+          await NotificationService.createNotification({
+            recipient_id: storeStatus.owner_id,
+            recipient_role: "owner",
+            title: "New Order Received",
+            message: "A customer has placed a new order from your store.",
+            type: "NEW_ORDER",
+            order_id: orderData.id,
+            store_id: store_id,
+          });
+        } catch (notifErr) {
+          console.error("Failed to create owner notification:", notifErr);
+        }
+      }
 
       showModernAlert({
         title: "Order Placed! 🎉",

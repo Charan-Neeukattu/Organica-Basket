@@ -14,6 +14,13 @@ export default function OwnerStackLayout() {
           animation: "slide_from_bottom"
         }} 
       />
+      <Stack.Screen 
+        name="notifications" 
+        options={{ 
+          presentation: "card",
+          animation: "slide_from_right"
+        }} 
+      />
     </Stack>
   );
 }
