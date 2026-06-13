@@ -5,7 +5,7 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import Animated, { FadeInDown, FadeInUp, useSharedValue, useAnimatedStyle, withTiming, Easing } from "react-native-reanimated";
 import { supabase } from "../../../lib/supabase";
 import * as Haptics from "expo-haptics";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
 import { showModernAlert } from "../../../components/ModernAlert";
 import { NotificationService } from "../../../lib/notificationService";
 
@@ -18,6 +18,7 @@ export default function OwnerDashboard() {
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
   const router = useRouter();
+  const { orderId } = useLocalSearchParams<{ orderId?: string }>();
 
   const productCardScale = useSharedValue(1);
   const productCardAnimatedStyle = useAnimatedStyle(() => ({
@@ -52,6 +53,28 @@ export default function OwnerDashboard() {
       if (unsubscribe) unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (orderId) {
+      const fetchAndOpenOrder = async () => {
+        try {
+          const { data, error } = await supabase
+            .from("orders")
+            .select("*, profiles!user_id(full_name, phone_number)")
+            .eq("id", orderId)
+            .single();
+          if (data && !error) {
+            setSelectedOrder(data);
+            setShowOrderModal(true);
+            router.setParams({ orderId: undefined });
+          }
+        } catch (err) {
+          console.error("Failed to load order from deep link:", err);
+        }
+      };
+      fetchAndOpenOrder();
+    }
+  }, [orderId]);
 
   const fetchUnreadCount = async () => {
     try {

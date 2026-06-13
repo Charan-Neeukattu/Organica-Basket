@@ -100,6 +100,34 @@ export default function OwnerNotificationsScreen() {
     }
   };
 
+  const handleNotificationPress = async (item: Notification) => {
+    if (!item.is_read) {
+      await handleMarkAsRead(item.id, false);
+    } else {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+
+    if (item.type === "NEW_REVIEW" || item.type === "review") {
+      let reviewId = "";
+      try {
+        const payload = JSON.parse(item.message);
+        reviewId = payload.reviewId;
+      } catch (e) {
+        console.error("Failed to parse review notification payload on press:", e);
+      }
+      
+      router.push({
+        pathname: "/(owner)/reviews",
+        params: { reviewId },
+      });
+    } else if (item.type === "NEW_ORDER" && item.order_id) {
+      router.push({
+        pathname: "/(owner)/(tabs)",
+        params: { orderId: item.order_id },
+      });
+    }
+  };
+
   const handleMarkAllAsRead = async () => {
     if (!userId || notifications.every((n) => n.is_read)) return;
 
@@ -186,7 +214,7 @@ export default function OwnerNotificationsScreen() {
                       styles.card,
                       isUnread ? styles.unreadCard : styles.readCard,
                     ]}
-                    onPress={() => handleMarkAsRead(item.id, item.is_read)}
+                    onPress={() => handleNotificationPress(item)}
                     activeOpacity={0.85}
                   >
                     {/* Left Icon */}
@@ -204,6 +232,8 @@ export default function OwnerNotificationsScreen() {
                         name={
                           item.type === "NEW_ORDER"
                             ? "receipt-outline"
+                            : item.type === "NEW_REVIEW" || item.type === "review"
+                            ? "star-outline"
                             : "notifications-outline"
                         }
                         size={22}
@@ -227,15 +257,42 @@ export default function OwnerNotificationsScreen() {
                           {formatRelativeTime(item.created_at)}
                         </Text>
                       </View>
-                      <Text
-                        style={[
-                          styles.cardMessage,
-                          isUnread ? styles.unreadMessageText : styles.readMessageText,
-                        ]}
-                        numberOfLines={3}
-                      >
-                        {item.message}
-                      </Text>
+                      {(() => {
+                        if (item.type === "NEW_REVIEW" || item.type === "review") {
+                          try {
+                            const payload = JSON.parse(item.message);
+                            return (
+                              <View style={styles.reviewNotificationBody}>
+                                <Text style={[styles.reviewRatingText, isUnread ? styles.unreadMessageText : styles.readMessageText]}>
+                                  {payload.customerName ? `${payload.customerName} left a ` : ""}{payload.rating}★ review
+                                </Text>
+                                <Text
+                                  style={[
+                                    styles.reviewFeedbackText,
+                                    isUnread ? styles.unreadFeedbackText : styles.readFeedbackText,
+                                  ]}
+                                  numberOfLines={2}
+                                >
+                                  "{payload.reviewText}"
+                                </Text>
+                              </View>
+                            );
+                          } catch (e) {
+                            // fallback
+                          }
+                        }
+                        return (
+                          <Text
+                            style={[
+                              styles.cardMessage,
+                              isUnread ? styles.unreadMessageText : styles.readMessageText,
+                            ]}
+                            numberOfLines={3}
+                          >
+                            {item.message}
+                          </Text>
+                        );
+                      })()}
                     </View>
 
                     {/* Unread dot */}
@@ -421,5 +478,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#8A998A",
     textAlign: "center",
+  },
+  reviewNotificationBody: {
+    marginTop: 4,
+    gap: 4,
+  },
+  reviewRatingText: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  reviewFeedbackText: {
+    fontSize: 13,
+    fontStyle: "italic",
+    lineHeight: 18,
+    marginTop: 2,
+  },
+  unreadFeedbackText: {
+    color: "#4A6038",
+    fontWeight: "600",
+  },
+  readFeedbackText: {
+    color: "#8A998A",
+    fontWeight: "500",
   },
 });

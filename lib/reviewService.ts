@@ -53,8 +53,8 @@ export const ReviewService = {
   async submitReview(
     review: Omit<Review, "id" | "created_at" | "updated_at">
   ): Promise<void> {
-    // 1. Submit the review
-    const { error: insertError } = await supabase
+    // 1. Submit the review and select the inserted row to get id and created_at
+    const { data: insertedReview, error: insertError } = await supabase
       .from("reviews")
       .insert({
         rating: review.rating,
@@ -62,11 +62,13 @@ export const ReviewService = {
         user_id: review.user_id,
         order_id: review.order_id,
         store_id: review.store_id,
-      });
+      })
+      .select()
+      .single();
 
-    if (insertError) {
+    if (insertError || !insertedReview) {
       console.error("Error submitting review:", insertError);
-      throw insertError;
+      throw insertError || new Error("Failed to get inserted review details.");
     }
 
     // 2. Fetch the store's owner_id
@@ -81,13 +83,38 @@ export const ReviewService = {
       return; // Non-blocking if notification fails but review succeeded
     }
 
-    // 3. Create owner notification
+    // 3. Fetch customer profile name
+    let customerName = "Customer";
     try {
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("full_name")
+        .eq("id", review.user_id)
+        .single();
+      if (!profileError && profile?.full_name) {
+        customerName = profile.full_name;
+      }
+    } catch (e) {
+      console.error("Error fetching customer profile for review notification:", e);
+    }
+
+    // 4. Create owner notification with payload serialized in the message field
+    try {
+      const payload = {
+        type: "review",
+        reviewId: insertedReview.id,
+        orderId: review.order_id,
+        customerName: customerName,
+        rating: review.rating,
+        reviewText: review.feedback || "",
+        createdAt: insertedReview.created_at,
+      };
+
       await NotificationService.createNotification({
         recipient_id: store.owner_id,
         recipient_role: "owner",
         title: "⭐ New Review Received",
-        message: `A customer left a ${review.rating}-star review for your store.`,
+        message: JSON.stringify(payload),
         type: "NEW_REVIEW",
         order_id: review.order_id,
         store_id: review.store_id,

@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import * as Haptics from "expo-haptics";
 import Animated, { FadeInDown, FadeInUp, Layout } from "react-native-reanimated";
 import { supabase } from "../../lib/supabase";
@@ -22,6 +22,7 @@ import { formatRelativeTime } from "../../lib/notificationService";
 
 export default function StoreReviewsScreen() {
   const router = useRouter();
+  const { reviewId } = useLocalSearchParams<{ reviewId?: string }>();
   const [reviews, setReviews] = useState<Review[]>([]);
   const [store, setStore] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -32,6 +33,10 @@ export default function StoreReviewsScreen() {
     totalReviews: 0,
     ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
   });
+
+  const [highlightedReviewId, setHighlightedReviewId] = useState<string | null>(null);
+  const scrollViewRef = React.useRef<ScrollView>(null);
+  const [cardPositions, setCardPositions] = useState<Record<string, number>>({});
 
   const ACTIVE_GREEN = "#4A6038";
   const ACTIVE_ORANGE = "#FF8C42";
@@ -103,6 +108,24 @@ export default function StoreReviewsScreen() {
     };
   }, [store?.id]);
 
+  useEffect(() => {
+    if (reviewId && cardPositions[reviewId] !== undefined && scrollViewRef.current) {
+      const timer = setTimeout(() => {
+        scrollViewRef.current?.scrollTo({
+          y: cardPositions[reviewId] - 20,
+          animated: true,
+        });
+        setHighlightedReviewId(reviewId);
+
+        const clearTimer = setTimeout(() => {
+          setHighlightedReviewId(null);
+        }, 3000);
+        return () => clearTimeout(clearTimer);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [reviewId, cardPositions]);
+
   const handleRefresh = () => {
     setRefreshing(true);
     loadData();
@@ -155,6 +178,7 @@ export default function StoreReviewsScreen() {
       </View>
 
       <ScrollView
+        ref={scrollViewRef}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
         refreshControl={
@@ -275,7 +299,17 @@ export default function StoreReviewsScreen() {
                   key={rev.id}
                   entering={FadeInDown.delay(index * 50)}
                   layout={Layout.springify()}
-                  style={styles.reviewCard}
+                  onLayout={(event) => {
+                    const layout = event.nativeEvent.layout;
+                    setCardPositions((prev) => ({
+                      ...prev,
+                      [rev.id]: layout.y,
+                    }));
+                  }}
+                  style={[
+                    styles.reviewCard,
+                    highlightedReviewId === rev.id && styles.highlightedReviewCard,
+                  ]}
                 >
                   {/* User and Meta Header */}
                   <View style={styles.reviewCardHeader}>
@@ -586,5 +620,14 @@ const styles = StyleSheet.create({
     color: "#8A998A",
     fontStyle: "italic",
     marginTop: 12,
+  },
+  highlightedReviewCard: {
+    borderColor: "#F1C40F",
+    borderWidth: 2,
+    backgroundColor: "#FFFDF0",
+    shadowColor: "#F1C40F",
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 4,
   },
 });
